@@ -84,7 +84,7 @@ module Rack
 
         Thread.new do
           begin
-            forward_request.add_field("Cookie", cookies(request))
+            forward_request.add_field("Cookie", encode_cookie_hash(cookies(request)))
             update_csrf_token_and_cookies(request, http.request(forward_request))
           rescue => e
             logger.debug "Replicating request failed with: #{e.message}"
@@ -159,7 +159,10 @@ module Rack
         return unless cookies_id(request)
         cookie = response.to_hash['set-cookie'].collect{ |ea|ea[/^.*?;/] }.join rescue {}
         cookie = Hash[cookie.split(";").map{ |d|d.split('=') }] rescue {}
-        redis.set(cookies_id(request), cookie)
+
+        if cookie != {}
+          redis.set(cookies_id(request), cookie)
+        end
       end
 
       ##
@@ -189,7 +192,7 @@ module Rack
       def cookies_id(request)
         cs = request.cookies
         session = cs && cs[options[:session_key]]
-        session_id = session && session.split("\n--").last
+        session_id = session && session.split("--").last
         session_id
       end
 
@@ -350,6 +353,18 @@ module Rack
         end
 
         replicated_options
+      end
+
+      ##
+      # Encodes a hash into key-value pairs in the form
+      # a=1;b=2;c=3
+      # @param [String => String] hash
+      # @returns [String]
+      def encode_cookie_hash(cookies)
+        return cookies unless cookies.is_a?(Hash)
+        cookies.map do |k,v|
+          "#{k}=#{v}"
+        end.join(';')
       end
 
       ##
